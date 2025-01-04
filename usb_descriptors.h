@@ -39,4 +39,11 @@
 
 #define JOYSTICK_STATE_SIZE 3
 
+// #define J_MIN 0x81 // == -127
+// #define J_MID 0
+// #define J_MAX 0x7f
+#define J_MIN 0x00 // == -1
+#define J_MID 0x01
+#define J_MAX 0x02
+
 #endif /* USB_DESCRIPTORS_H_ */

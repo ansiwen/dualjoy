@@ -107,8 +107,8 @@ uint8_t const * tud_descriptor_device_cb(void)
     0xA1, 0x00,               /*   COLLECTION (Physical) */ \
     0x09, 0x30,               /*     USAGE (x) */ \
     0x09, 0x31,               /*     USAGE (y) */ \
-    0x15, 0x81,               /*     LOGICAL_MINIMUM (-127) */ \
-    0x26, 0x7f, 0x00,         /*     LOGICAL_MAXIMUM (127) */ \
+    0x15, J_MIN,               /*     LOGICAL_MINIMUM (-127) */ \
+    0x26, J_MAX, 0x00,         /*     LOGICAL_MAXIMUM (127) */ \
     0x75, 0x08,               /*     REPORT_SIZE (8) */ \
     0x95, 0x02,               /*     REPORT_COUNT (2) */ \
     0x81, 0x02,               /*     INPUT (Data,Var,Abs) */ \
@@ -171,11 +171,11 @@ enum
 uint8_t const desc_configuration[] =
 {
   // Config number, interface count, string index, total length, attribute, power in mA
-  TUD_CONFIG_DESCRIPTOR(1, ITF_NUM_TOTAL, 0, CONFIG_TOTAL_LEN, TUSB_DESC_CONFIG_ATT_REMOTE_WAKEUP, 100),
+  TUD_CONFIG_DESCRIPTOR(1, ITF_NUM_TOTAL, 0, CONFIG_TOTAL_LEN, 0, 100),
 
   // Interface number, string index, protocol, report descriptor len, EP In address, size & polling interval
-  TUD_HID_DESCRIPTOR(ITF_NUM_HID1, 0, HID_ITF_PROTOCOL_NONE, sizeof(desc_hid_report1), EPNUM_HID1, CFG_TUD_HID_EP_BUFSIZE, 5),
-  TUD_HID_DESCRIPTOR(ITF_NUM_HID2, 0, HID_ITF_PROTOCOL_NONE, sizeof(desc_hid_report2), EPNUM_HID2, CFG_TUD_HID_EP_BUFSIZE, 5)
+  TUD_HID_DESCRIPTOR(ITF_NUM_HID1, 4, HID_ITF_PROTOCOL_NONE, sizeof(desc_hid_report1), EPNUM_HID1, CFG_TUD_HID_EP_BUFSIZE, 5),
+  TUD_HID_DESCRIPTOR(ITF_NUM_HID2, 5, HID_ITF_PROTOCOL_NONE, sizeof(desc_hid_report2), EPNUM_HID2, CFG_TUD_HID_EP_BUFSIZE, 5)
 };
 
 #if TUD_OPT_HIGH_SPEED
@@ -250,6 +250,8 @@ enum {
   STRID_MANUFACTURER,
   STRID_PRODUCT,
   STRID_SERIAL,
+  STRID_JOYSTICK1,
+  STRID_JOYSTICK2
 };
 
 // array of pointer to string descriptors
@@ -257,8 +259,10 @@ char const *string_desc_arr[] =
 {
   (const char[]) { 0x09, 0x04 }, // 0: is supported language is English (0x0409)
   "TinyUSB",                     // 1: Manufacturer
-  "TinyUSB Device",              // 2: Product
+  "DualJoy",                     // 2: Product
   NULL,                          // 3: Serials will use unique ID if possible
+  "Joystick 1",                  // 4: Joystick 1
+  "Joystick 2"                   // 5: Joystick 2
 };
 
 static uint16_t _desc_str[32 + 1];
@@ -266,7 +270,7 @@ static uint16_t _desc_str[32 + 1];
 // Invoked when received GET STRING DESCRIPTOR request
 // Application return pointer to descriptor, whose contents must exist long enough for transfer to complete
 uint16_t const *tud_descriptor_string_cb(uint8_t index, uint16_t langid) {
-  printf("%s called\n", __func__);
+  printf("%s index:%d langid:%d\n", __func__, index, langid);
   (void) langid;
   size_t chr_count;
 

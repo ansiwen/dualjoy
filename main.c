@@ -45,12 +45,12 @@
  * - 2500 ms : device is suspended
  */
 enum  {
-  BLINK_NOT_MOUNTED = 250,
-  BLINK_MOUNTED = 1000,
-  BLINK_SUSPENDED = 2500,
+  BLINK_NOT_MOUNTED = 250 * 1000,
+  BLINK_MOUNTED = 1000 * 1000,
+  BLINK_SUSPENDED = 2500 * 1000,
 };
 
-static uint32_t blink_interval_ms = BLINK_NOT_MOUNTED;
+static uint32_t blink_interval_us = BLINK_NOT_MOUNTED;
 
 
 // ----------------------------- JOYSTICK BEGIN ----------------------------
@@ -76,16 +76,13 @@ static uint32_t blink_interval_ms = BLINK_NOT_MOUNTED;
 #define J2_RIGHT 6
 #define J2_BTN 26
 
-#define J_MIN 129 // == -127
-#define J_MID 0
-#define J_MAX 127
 
 #define J1_MASK (1 << J1_UP | 1 << J1_DOWN | 1 << J1_LEFT | 1 << J1_RIGHT | 1 << J1_BTN)
 #define J2_MASK (1 << J2_UP | 1 << J2_DOWN | 1 << J2_LEFT | 1 << J2_RIGHT | 1 << J2_BTN)
 
 #define GPIO_MASK (J1_MASK | J2_MASK)
 
-#define GET_BIT(data, bit) ((data >> bit) & 1)
+#define BIT_MASK(data, bit) ((data & (1 << bit)))
 // #define SET_BIT(data, bit) (data |= (1 << bit))
 // #define CLR_BIT(data, bit) (data &= ~(1 << bit))
 // #define TOG_BIT(data, bit) (data ^= (1 << bit))
@@ -99,9 +96,9 @@ const uint8_t inputPins[] =  {
 };
 
 static uint8_t state[JOYSTICK_STATE_SIZE * 2] = { 0 };
-static alarm_id_t alarm[JOYSTICK_STATE_SIZE * 2] = { 0 };
+static uint32_t timeout[JOYSTICK_STATE_SIZE * 2] = { 0 };
 
-inline static void send_states() {
+static inline void send_states() {
   static uint8_t last[JOYSTICK_STATE_SIZE * 2] = {255, 255, 255, 255, 255, 255};
   if (!STATE_EQUAL(last, state, 0)) {
     printf("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX J1: %d %d %d\n", state[0], state[1], state[2]);
@@ -123,51 +120,51 @@ inline static void send_states() {
   }
 }
 
-static int64_t alarm_callback(alarm_id_t, void *);
+// static int64_t alarm_callback(alarm_id_t, void *);
 
-inline static void set_state(uintptr_t i, uint8_t value) {
+static inline void set_state(uintptr_t i, uint8_t value) {
   if (state[i] != value) {
-    if (!alarm[i]) {
+    if (timeout[i] < time_us_32()) {
       printf("%s changing state %d from %d to %d\n", __func__, i, state[i], value);
       state[i] = value;
-      alarm[i] = add_alarm_in_ms(40, &alarm_callback, (void *)i, false);
+      timeout[i] = time_us_32() + 40 * 1000;
     } else {
-        printf("%s skipping %d because alarm is set\n", __func__, i);
+        printf("%s skipping %d because recent change\n", __func__, i);
     }
   }
 }
 
-static void update_states(uint, uint32_t) {
+static inline void update_states() {
   uint32_t gpios = gpio_get_all();
 
-  printf("%s gpios: %b\n", __func__, gpios & GPIO_MASK);
+  //printf("%s gpios: %b\n", __func__, gpios & GPIO_MASK);
 
-  set_state(0, !GET_BIT(gpios, J1_BTN));
-  if (!GET_BIT(gpios, J1_LEFT)) set_state(1, J_MIN); /* left */
-  else if (!GET_BIT(gpios, J1_RIGHT)) set_state(1, J_MAX); /* right */
+  set_state(0, !BIT_MASK(gpios, J1_BTN));
+  if (!BIT_MASK(gpios, J1_LEFT)) set_state(1, J_MIN); /* left */
+  else if (!BIT_MASK(gpios, J1_RIGHT)) set_state(1, J_MAX); /* right */
   else set_state(1, J_MID);
-  if (!GET_BIT(gpios, J1_UP)) set_state(2, J_MIN); /* up */
-  else if (!GET_BIT(gpios, J1_DOWN)) set_state(2, J_MAX); /* down */
+  if (!BIT_MASK(gpios, J1_UP)) set_state(2, J_MIN); /* up */
+  else if (!BIT_MASK(gpios, J1_DOWN)) set_state(2, J_MAX); /* down */
   else set_state(2, J_MID);
 
-  set_state(JOYSTICK_STATE_SIZE + 0, !GET_BIT(gpios, J2_BTN));
-  if (!GET_BIT(gpios, J2_LEFT)) set_state(JOYSTICK_STATE_SIZE + 1, J_MIN); /* left */
-  else if (!GET_BIT(gpios, J2_RIGHT)) set_state(JOYSTICK_STATE_SIZE + 1, J_MAX); /* right */
+  set_state(JOYSTICK_STATE_SIZE + 0, !BIT_MASK(gpios, J2_BTN));
+  if (!BIT_MASK(gpios, J2_LEFT)) set_state(JOYSTICK_STATE_SIZE + 1, J_MIN); /* left */
+  else if (!BIT_MASK(gpios, J2_RIGHT)) set_state(JOYSTICK_STATE_SIZE + 1, J_MAX); /* right */
   else set_state(JOYSTICK_STATE_SIZE + 1, J_MID);
-  if (!GET_BIT(gpios, J2_UP)) set_state(JOYSTICK_STATE_SIZE + 2, J_MIN); /* up */
-  else if (!GET_BIT(gpios, J2_DOWN)) set_state(JOYSTICK_STATE_SIZE + 2, J_MAX); /* down */
+  if (!BIT_MASK(gpios, J2_UP)) set_state(JOYSTICK_STATE_SIZE + 2, J_MIN); /* up */
+  else if (!BIT_MASK(gpios, J2_DOWN)) set_state(JOYSTICK_STATE_SIZE + 2, J_MAX); /* down */
   else set_state(JOYSTICK_STATE_SIZE + 2, J_MID);
 
   send_states();
 }
 
-static int64_t alarm_callback(alarm_id_t id, void *user_data) {
-  uintptr_t i = (uintptr_t)user_data;
-  printf("%s id:%d user_data:%d\n", __func__, id, (uintptr_t)user_data);
-  alarm[i] = 0;
-  update_states(0, 0);
-  return 0;
-}
+// static int64_t alarm_callback(alarm_id_t id, void *user_data) {
+//   uintptr_t i = (uintptr_t)user_data;
+//   printf("%s id:%d user_data:%d\n", __func__, id, (uintptr_t)user_data);
+//   timeout[i] = 0;
+// //  update_states(0, 0);
+//   return 0;
+// }
 
 void setup_joysticks() {
   //set all DB9-connector input signal pins as inputs with pullups
@@ -175,25 +172,21 @@ void setup_joysticks() {
     gpio_set_input_enabled(inputPins[i], true);
     gpio_set_pulls(inputPins[i], true, false); // PULLUP
   }
-  gpio_set_irq_callback(update_states);
-  for (uint8_t i = 0; i < sizeof(inputPins); i++) {
-    gpio_set_irq_enabled(inputPins[i], GPIO_IRQ_EDGE_RISE | GPIO_IRQ_EDGE_FALL, true);
-  }
-  irq_set_enabled(IO_IRQ_BANK0, true);
+  // gpio_set_irq_callback(update_states);
+  // for (uint8_t i = 0; i < sizeof(inputPins); i++) {
+  //   gpio_set_irq_enabled(inputPins[i], GPIO_IRQ_EDGE_RISE | GPIO_IRQ_EDGE_FALL, true);
+  // }
+  // irq_set_enabled(IO_IRQ_BANK0, true);
 }
 
 // ------------------------------JOYSTICK END ------------------------------
 
 
-void led_blinking_task(void);
-void hid_task(void);
+static inline void led_blinking_task(void);
 
 /*------------- MAIN -------------*/
 int main(void)
 {
-
-  set_sys_clock_khz(120000, true);
-
   stdio_init_all();
   printf("starting...\n");
 
@@ -204,24 +197,30 @@ int main(void)
   // init device stack on configured roothub port
   tud_init(BOARD_TUD_RHPORT);
 
+  sleep_ms(100);
+
   if (board_init_after_tusb) {
     board_init_after_tusb();
   }
 
+  sleep_ms(100);
+
   setup_joysticks();
 
-  while (!tud_hid_n_ready(0) || !tud_hid_n_ready(1))
+  sleep_ms(100);
+
+  while (!tud_mounted())
   {
     tud_task(); // tinyusb device task
     led_blinking_task();
-//    sleep_ms(1);
   }
-  send_states();
-  while(1) {
-    tud_task();
+
+  while (1)
+  {
+    tud_task(); // tinyusb device task
     led_blinking_task();
-//    sleep_ms(1);
-    sleep_ms(100);
+    update_states();
+    sleep_us(100);
   }
 }
 
@@ -233,14 +232,14 @@ int main(void)
 void tud_mount_cb(void)
 {
   printf("%s called\n", __func__);
-  blink_interval_ms = BLINK_MOUNTED;
+  blink_interval_us = BLINK_MOUNTED;
 }
 
 // Invoked when device is unmounted
 void tud_umount_cb(void)
 {
   printf("%s called\n", __func__);
-  blink_interval_ms = BLINK_NOT_MOUNTED;
+  blink_interval_us = BLINK_NOT_MOUNTED;
 }
 
 // Invoked when usb bus is suspended
@@ -250,14 +249,14 @@ void tud_suspend_cb(bool remote_wakeup_en)
 {
   printf("%s called\n", __func__);
   (void) remote_wakeup_en;
-  blink_interval_ms = BLINK_SUSPENDED;
+  blink_interval_us = BLINK_SUSPENDED;
 }
 
 // Invoked when usb bus is resumed
 void tud_resume_cb(void)
 {
   printf("%s called\n", __func__);
-  blink_interval_ms = tud_mounted() ? BLINK_MOUNTED : BLINK_NOT_MOUNTED;
+  blink_interval_us = tud_mounted() ? BLINK_MOUNTED : BLINK_NOT_MOUNTED;
 }
 
 
@@ -306,13 +305,13 @@ void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_
   //     if (kbd_leds & KEYBOARD_LED_CAPSLOCK)
   //     {
   //       // Capslock On: disable blink, turn led on
-  //       blink_interval_ms = 0;
+  //       blink_interval_us = 0;
   //       board_led_write(true);
   //     }else
   //     {
   //       // Caplocks Off: back to normal blink
   //       board_led_write(false);
-  //       blink_interval_ms = BLINK_MOUNTED;
+  //       blink_interval_us = BLINK_MOUNTED;
   //     }
   //   }
   // }
@@ -321,17 +320,18 @@ void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_
 //--------------------------------------------------------------------+
 // BLINKING TASK
 //--------------------------------------------------------------------+
-void led_blinking_task(void)
+static inline void led_blinking_task(void)
 {
-  static uint32_t start_ms = 0;
+  static uint32_t next_us = 0;
   static bool led_state = false;
 
   // blink is disabled
-  if (!blink_interval_ms) return;
+  if (!blink_interval_us) return;
 
   // Blink every interval ms
-  if ( board_millis() - start_ms < blink_interval_ms) return; // not enough time
-  start_ms += blink_interval_ms;
+  uint32_t now = time_us_32();
+  if ( now < next_us) return; // not enough time
+  next_us = now + blink_interval_us;
 
   board_led_write(led_state);
   led_state = 1 - led_state; // toggle
