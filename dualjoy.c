@@ -1,6 +1,7 @@
 /*
  * The MIT License (MIT)
  *
+ * Copyright (c) 2025, Sven Anderson (https://github.com/ansiwen)
  * Copyright (c) 2019 Ha Thach (tinyusb.org)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -32,7 +33,7 @@
 #include "bsp/board_api.h"
 #include "tusb.h"
 
-#include "usb_descriptors.h"
+#include "dualjoy.h"
 
 //--------------------------------------------------------------------+
 // MACRO CONSTANT TYPEDEF PROTYPES
@@ -195,22 +196,22 @@ static inline void send_states() {
   }
 
   if (!REPORT_EQUAL(sent_r1, last_r1)) {
-    printf("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX J1: %d %x\n", last_r1.direction, last_r1.buttons);
+    trace("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX J1: %d %x\n", last_r1.direction, last_r1.buttons);
     if (tud_hid_n_report(0, JOYSTICK_REPORT_ID, &last_r1, sizeof(report))) {
       led_flash();
       REPORT_COPY(sent_r1, last_r1);
     } else {
-      printf("###################################### failed to send report\n");
+      trace("###################################### failed to send report\n");
     }
   }
 
   if (!REPORT_EQUAL(sent_r2, last_r2)) {
-    printf("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX J2: %d %x\n", last_r2.direction, last_r2.buttons);
+    trace("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX J2: %d %x\n", last_r2.direction, last_r2.buttons);
     if (tud_hid_n_report(1, JOYSTICK2_REPORT_ID, &last_r2, sizeof(report))) {
       led_flash();
       REPORT_COPY(sent_r2, last_r2);
     } else {
-      printf("###################################### failed to send report\n");
+      trace("###################################### failed to send report\n");
     }
   }
 }
@@ -231,16 +232,16 @@ static inline void update_states_task() {
 
   // beware, here comes some serious over-engineering
   while (changes) {
-    printf("%s pins: %.32b pin_states: %.32b changes: %.32b\n", __func__, pins, pin_states, changes);
+    trace("%s pins: %.32b pin_states: %.32b changes: %.32b\n", __func__, pins, pin_states, changes);
     const uint32_t mask = changes & -changes; // isolate least significant changed bit
     changes &= ~mask; // remove that bit from changes
     const uint8_t i = fast_log2_of_pow2(mask); // calculate bit position
     if (reached(pin_timeouts[i])) {
-      printf("%s changing state of pin %d to %d\n", __func__, i, !(pin_states & mask));
+      trace("%s changing state of pin %d to %d\n", __func__, i, !(pin_states & mask));
       pin_states ^= mask;
       pin_timeouts[i] = time_after_us(DEBOUNCE_TIMEOUT_US);
     } else {
-        printf("%s skipping %d because recent change\n", __func__, i);
+        trace("%s skipping %d because recent change\n", __func__, i);
     }
   }
 
@@ -292,14 +293,14 @@ static inline void led_blinking_task()
 // Invoked when device is mounted
 void tud_mount_cb(void)
 {
-  printf("%s called\n", __func__);
+  trace("%s called\n", __func__);
   led_blink_fast_until(time_after_us(1000 * 1000));
 }
 
 // Invoked when device is unmounted
 void tud_umount_cb(void)
 {
-  printf("%s called\n", __func__);
+  trace("%s called\n", __func__);
   led_set_blink_mode(BLINK_NOT_MOUNTED);
 }
 
@@ -308,14 +309,14 @@ void tud_umount_cb(void)
 // Within 7ms, device must draw an average of current less than 2.5 mA from bus
 void tud_suspend_cb(bool)
 {
-  printf("%s called\n", __func__);
+  trace("%s called\n", __func__);
   led_set_blink_mode(BLINK_SUSPENDED);
 }
 
 // Invoked when usb bus is resumed
 void tud_resume_cb(void)
 {
-  printf("%s called\n", __func__);
+  trace("%s called\n", __func__);
   if (tud_mounted()) {
     led_blink_fast_until(time_after_us(500 * 1000));
   } else {
@@ -328,7 +329,7 @@ void tud_resume_cb(void)
 // Note: For composite reports, report[0] is report ID
 void tud_hid_report_complete_cb(uint8_t instance, uint8_t const* report, uint16_t len)
 {
-  printf("%s instance:%d\n", __func__, instance);
+  trace("%s instance:%d\n", __func__, instance);
   (void) len;
 }
 
@@ -337,7 +338,7 @@ void tud_hid_report_complete_cb(uint8_t instance, uint8_t const* report, uint16_
 // Return zero will cause the stack to STALL request
 uint16_t tud_hid_get_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_t report_type, uint8_t* buffer, uint16_t reqlen)
 {
-  printf("%s called\n", __func__);
+  trace("%s called\n", __func__);
   // TODO not Implemented
   (void) instance;
   (void) report_id;
@@ -352,7 +353,7 @@ uint16_t tud_hid_get_report_cb(uint8_t instance, uint8_t report_id, hid_report_t
 // received data on OUT endpoint ( Report ID = 0, Type = 0 )
 void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_t report_type, uint8_t const* buffer, uint16_t bufsize)
 {
-  printf("%s called\n", __func__);
+  trace("%s called\n", __func__);
   (void) instance;
 }
 
@@ -362,7 +363,7 @@ void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_
 int main(void)
 {
   stdio_init_all();
-  printf("DualJoy starting...\n");
+  trace("DualJoy starting...\n");
 
   board_init();
 

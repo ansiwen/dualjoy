@@ -1,6 +1,7 @@
 /*
  * The MIT License (MIT)
  *
+ * Copyright (c) 2025, Sven Anderson (https://github.com/ansiwen)
  * Copyright (c) 2019 Ha Thach (tinyusb.org)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -36,5 +37,11 @@
 
 #define JOYSTICK_REPORT_ID  0x04
 #define JOYSTICK2_REPORT_ID 0x05
+
+#if defined(LIB_PICO_STDIO_USB) || defined(LIB_PICO_STDIO_UART)
+#define trace(...) printf(__VA_ARGS__)
+#else
+#define trace(...) do {} while(0)
+#endif
 
 #endif /* USB_DESCRIPTORS_H_ */

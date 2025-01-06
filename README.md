@@ -1,2 +1,9 @@
-This is a copy of the hid_composite example from TinyUSB (https://github.com/hathach/tinyusb/tree/master/examples/device/hid_composite)
-showing how to build with TinyUSB when using the Raspberry Pi Pico SDK
+# DualJoy
+
+This is a firmware for the Rapsberry Pi Pico that turns it into a USB adapter
+for _two_ D-Sub 9 joysticks, as they where used with the Atari 2600 console and
+the Commodore C64 and Amiga home computers. They will appear as two digital
+hats/d-pads with only one button.
+
+The code is based on the various examples of the Pico SDK and TinyUSB and keeps
+their MIT license.

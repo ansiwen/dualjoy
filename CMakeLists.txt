@@ -37,18 +37,20 @@ pico_sdk_init()
 
 add_executable(dualjoy)
 
-pico_enable_stdio_usb(dualjoy 1)
+# enable these for serial debug output
+pico_enable_stdio_usb(dualjoy 0)
 pico_enable_stdio_uart(dualjoy 0)
-set(LOG 2)
+#set(LOG 2)
 
 target_sources(dualjoy PUBLIC
-        ${CMAKE_CURRENT_LIST_DIR}/main.c
+        ${CMAKE_CURRENT_LIST_DIR}/dualjoy.c
         ${CMAKE_CURRENT_LIST_DIR}/usb_descriptors.c
-        )
+)
 
 # Make sure TinyUSB can find tusb_config.h
 target_include_directories(dualjoy PUBLIC
-        ${CMAKE_CURRENT_LIST_DIR})
+        ${CMAKE_CURRENT_LIST_DIR}
+)
 
 # In addition to pico_stdlib required for common PicoSDK functionality, add dependency on tinyusb_device
 # for TinyUSB device support and tinyusb_board for the additional board support library used by the example

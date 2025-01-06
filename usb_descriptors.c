@@ -1,6 +1,7 @@
 /*
  * The MIT License (MIT)
  *
+ * Copyright (c) 2025, Sven Anderson (https://github.com/ansiwen)
  * Copyright (c) 2019 Ha Thach (tinyusb.org)
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -25,7 +26,7 @@
 
 #include "bsp/board_api.h"
 #include "tusb.h"
-#include "usb_descriptors.h"
+#include "dualjoy.h"
 
 /* A combination of interfaces must have a unique product id, since PC will save device driver after the first plug.
  * Same VID/PID with different interface e.g MSC (first), then CDC (later) will possibly cause system error on PC.
@@ -68,7 +69,7 @@ tusb_desc_device_t const desc_device =
 // Application return pointer to descriptor
 uint8_t const * tud_descriptor_device_cb(void)
 {
-  printf("%s called\n", __func__);
+  trace("%s called\n", __func__);
   return (uint8_t const *) &desc_device;
 }
 
@@ -121,7 +122,7 @@ static const uint8_t desc_hid_report2[] = {
 // Descriptor contents must exist long enough for transfer to complete
 uint8_t const * tud_hid_descriptor_report_cb(uint8_t instance)
 {
-  printf("%s called\n", __func__);
+  trace("%s called\n", __func__);
   switch (instance) {
     case 0:
       return desc_hid_report1;
@@ -194,7 +195,7 @@ uint8_t const desc_configuration[] =
 // Descriptor contents must exist long enough for transfer to complete
 uint8_t const * tud_descriptor_configuration_cb(uint8_t index)
 {
-  printf("%s called\n", __func__);
+  trace("%s called\n", __func__);
   (void) index; // for multiple configurations
 
   // This example use the same configuration for both high and full speed mode
@@ -222,7 +223,7 @@ static uint16_t _desc_str[32 + 1];
 // Invoked when received GET STRING DESCRIPTOR request
 // Application return pointer to descriptor, whose contents must exist long enough for transfer to complete
 uint16_t const *tud_descriptor_string_cb(uint8_t index, uint16_t langid) {
-  printf("%s index:%d langid:%d\n", __func__, index, langid);
+  trace("%s index:%d langid:%d\n", __func__, index, langid);
   (void) langid;
   size_t chr_count;
 
