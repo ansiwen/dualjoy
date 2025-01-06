@@ -104,10 +104,13 @@
 #define CFG_TUD_HID_EP_COUNT      2    // Number of HID endpoints
 #define CFG_TUD_HID_INSTANCE_COUNT 2   // Number of HID instances
 
+
 #ifdef LIB_PICO_STDIO_USB
+
+//--- CDC stuff ---//
+
 #undef CFG_TUD_CDC
 #undef CFG_TUD_VENDOR
-//--- CDC stuff ---//
 #define CFG_TUD_CDC             (1)
 #define CFG_TUD_CDC_RX_BUFSIZE  (256)
 #define CFG_TUD_CDC_TX_BUFSIZE  (256)
@@ -124,9 +127,7 @@
 #define CFG_TUD_VENDOR_TX_BUFSIZE  (256)
 #endif
 
-#define PICO_STDIO_USB_ENABLE_RESET_VIA_BAUD_RATE 1
-#define PICO_STDIO_USB_ENABLE_RESET_VIA_VENDOR_INTERFACE 1
-#endif
+#endif // LIB_PICO_STDIO_USB
 
 #ifdef __cplusplus
  }

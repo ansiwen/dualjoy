@@ -50,6 +50,7 @@ enum {
   DEBOUNCE_TIMEOUT_US = 20 * 1000,
   EVENT_FLASH_US = 30 * 1000,
   BLINK_FAST_US = 50 * 1000,
+  MAX_DELAY_US = BLINK_SUSPENDED, // must be set to the largest wait interval
 };
 
 #define ARRAY_SIZE(_arr) ( sizeof(_arr) / sizeof(_arr[0]) )
@@ -79,76 +80,90 @@ enum {
   J2_BTN = 26,
 };
 
+#define J1_MASK (1<<J1_UP | 1<<J1_DOWN | 1<<J1_LEFT | 1<<J1_RIGHT | 1<<J1_BTN)
+#define J2_MASK (1<<J2_UP | 1<<J2_DOWN | 1<<J2_LEFT | 1<<J2_RIGHT | 1<<J2_BTN)
+
+#define PIN_MASK (J1_MASK | J2_MASK)
+
 enum {
   UP = 0,
   DOWN,
   LEFT,
   RIGHT,
   BTN,
-  STATE_NUM
+  STATE_NUM,
+  PIN_NUM = STATE_NUM * 2,
 };
 
-const uint8_t inputPins[] =  {
+const uint8_t inputGPIOs[PIN_NUM] =  {
   J1_UP, J1_DOWN, J1_LEFT, J1_RIGHT, J1_BTN,
   J2_UP, J2_DOWN, J2_LEFT, J2_RIGHT, J2_BTN
 };
 
-const uint32_t inputMasks[ARRAY_SIZE(inputPins)] = {
+const uint32_t inputMasks[PIN_NUM] = {
   1 << J1_UP, 1 << J1_DOWN, 1 << J1_LEFT, 1 << J1_RIGHT, 1 << J1_BTN,
   1 << J2_UP, 1 << J2_DOWN, 1 << J2_LEFT, 1 << J2_RIGHT, 1 << J2_BTN
 };
 
-typedef struct {
-  uint32_t timeout;
-  bool val;
-} pin_state;
+static uint32_t pin_states = 0;
+static uint32_t pin_timeouts[32] = { 0 };
 
-static pin_state states[ARRAY_SIZE(inputPins)] = { 0};
-
-static inline uint8_t states2direction(pin_state s[STATE_NUM]) {
-  if (s[UP].val) {
-    if (s[RIGHT].val)
+static inline uint8_t states2direction(const uint32_t mask[STATE_NUM]) {
+  if (pin_states & mask[UP]) {
+    if (pin_states & mask[RIGHT])
       return 2;  // NE
-    else if (s[LEFT].val)
+    else if (pin_states & mask[LEFT])
       return 8;  // NW
     else
       return 1;  // N
   }
-  else if (s[DOWN].val) {
-    if (s[RIGHT].val)
+  else if (pin_states & mask[DOWN]) {
+    if (pin_states & mask[RIGHT])
       return 4;  // SE
-    else if (s[LEFT].val)
+    else if (pin_states & mask[LEFT])
       return 6;  // SW
     else
       return 5;  // S
   }
-  else if (s[RIGHT].val)
+  else if (pin_states & mask[RIGHT])
     return 3;  // E
-  else if (s[LEFT].val)
+  else if (pin_states & mask[LEFT])
     return 7;  // W
   else
     return 0;  // Center
 }
 
-static inline bool reached(uint32_t t) {
+static inline bool reached(const uint32_t t) {
   // overflow safe time comparison
-  return (int32_t)(t-time_us_32())<0;
+  return t == 0 || t-time_us_32() > MAX_DELAY_US;
 }
 
 static inline uint32_t time_after_us(uint32_t us) {
+  if (us > MAX_DELAY_US) us = MAX_DELAY_US;
   return (time_us_32() + us) | 1; // make sure it's never 0 after overflow
 }
 
 static inline void led_flash() {
   led_state = !led_state;
   board_led_write(led_state);
+  blink_interval_us = BLINK_OFF;
   blink_timeout_us = time_after_us(EVENT_FLASH_US);
 }
 
-static inline void led_blink_fast_until(uint32_t timeout) {
+static inline void led_set_blink_mode(const uint32_t interval) {
+  blink_timeout_us = 0;
+  if (interval == BLINK_OFF) {
+    led_state = false;
+    board_led_write(false);
+  }
+  blink_interval_us = interval;
+}
+
+static inline void led_blink_fast_until(const uint32_t timeout) {
   blink_timeout_us = timeout;
   blink_interval_us = BLINK_FAST_US;
 }
+
 
 typedef struct {
   uint8_t direction;
@@ -159,69 +174,86 @@ typedef struct {
 #define REPORT_COPY(a, b) do { a.direction = b.direction; a.buttons = b.buttons; } while (0)
 
 static inline void send_states() {
-  static report last1;
-  static report last2;
+  static report last_r1 = {0, 0};
+  static report last_r2 = {0, 0};
+  static report sent_r1 = {0, 0};
+  static report sent_r2 = {0, 0};
+  static uint32_t last_states = 0;
 
-  report report;
-  report.direction = states2direction(&states[0]);
-  report.buttons = states[BTN].val ? 1 : 0;
+  const uint32_t changes = last_states ^ pin_states;
 
-  if (!REPORT_EQUAL(last1, report)) {
-    printf("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX J1: %d %x\n", report.direction, report.buttons);
-    if (tud_hid_n_report(0, JOYSTICK_REPORT_ID, &report, sizeof(report))) {
+  if (changes) {
+    if (changes & J1_MASK) {
+      last_r1.direction = states2direction(&inputMasks[0]);
+      last_r1.buttons = (pin_states & inputMasks[BTN]) ? 1 : 0;
+    }
+    if (changes & J2_MASK) {
+      last_r2.direction = states2direction(&inputMasks[STATE_NUM]);
+      last_r2.buttons = (pin_states & inputMasks[STATE_NUM+BTN]) ? 1 : 0;
+    }
+    last_states = pin_states;
+  }
+
+  if (!REPORT_EQUAL(sent_r1, last_r1)) {
+    printf("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX J1: %d %x\n", last_r1.direction, last_r1.buttons);
+    if (tud_hid_n_report(0, JOYSTICK_REPORT_ID, &last_r1, sizeof(report))) {
       led_flash();
-      REPORT_COPY(last1, report);
+      REPORT_COPY(sent_r1, last_r1);
     } else {
       printf("###################################### failed to send report\n");
     }
   }
 
-  report.direction = states2direction(&states[STATE_NUM]);
-  report.buttons = states[STATE_NUM+BTN].val ? 1 : 0;
-
-  if (!REPORT_EQUAL(last2, report)) {
-    printf("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX J2: %d %x\n", report.direction, report.buttons);
-    if (tud_hid_n_report(1, JOYSTICK2_REPORT_ID, &report, sizeof(report))) {
+  if (!REPORT_EQUAL(sent_r2, last_r2)) {
+    printf("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX J2: %d %x\n", last_r2.direction, last_r2.buttons);
+    if (tud_hid_n_report(1, JOYSTICK2_REPORT_ID, &last_r2, sizeof(report))) {
       led_flash();
-      REPORT_COPY(last2, report);
+      REPORT_COPY(sent_r2, last_r2);
     } else {
       printf("###################################### failed to send report\n");
     }
   }
 }
 
-static inline void set_state(pin_state *s, bool value) {
-  if (s->val != value) {
-    if (reached(s->timeout)) {
-      printf("%s changing pin_state %d from %d to %d\n", __func__, s-&states[0], s->val, value);
-      s->val = value;
-      s->timeout = time_after_us(DEBOUNCE_TIMEOUT_US);
-    } else {
-        printf("%s skipping %d because recent change\n", __func__, s-&states[0]);
-    }
-  }
+static inline uint8_t fast_log2_of_pow2(const uint32_t x) {
+    static const uint32_t deBruijnSequence = 0x077CB531U;
+    static const uint8_t lookupTable[32] = {
+        0, 1, 28, 2, 29, 14, 24, 3, 30, 22, 20, 15, 25, 17, 4, 8,
+        31, 27, 13, 23, 21, 19, 16, 7, 26, 12, 18, 6, 11, 5, 10, 9
+    };
+    // Multiply by de Bruijn sequence
+    return lookupTable[((x * deBruijnSequence) >> 27)];
 }
 
-static inline void update_states() {
-  uint32_t gpios = gpio_get_all();
+static inline void update_states_task() {
+  const uint32_t pins = (~gpio_get_all()) & PIN_MASK;
+  uint32_t changes = pins ^ pin_states;
 
-  // here comes some over-engineering
-  const uint32_t *mask_p = &inputMasks[0];
-  pin_state *state_p = &states[0];
-  while (mask_p != &inputMasks[ARRAY_SIZE(inputMasks)]) {
-    set_state(state_p++, (gpios & *(mask_p++)) == 0);
+  // beware, here comes some serious over-engineering
+  while (changes) {
+    printf("%s pins: %.32b pin_states: %.32b changes: %.32b\n", __func__, pins, pin_states, changes);
+    const uint32_t mask = changes & -changes; // isolate least significant changed bit
+    changes &= ~mask; // remove that bit from changes
+    const uint8_t i = fast_log2_of_pow2(mask); // calculate bit position
+    if (reached(pin_timeouts[i])) {
+      printf("%s changing state of pin %d to %d\n", __func__, i, !(pin_states & mask));
+      pin_states ^= mask;
+      pin_timeouts[i] = time_after_us(DEBOUNCE_TIMEOUT_US);
+    } else {
+        printf("%s skipping %d because recent change\n", __func__, i);
+    }
   }
 
   send_states();
 }
 
-void setup_joysticks() {
+void setup_gpios() {
   //set all DB9-connector input signal pins as inputs with pullups
-  for (uint8_t i = 0; i < sizeof(inputPins); i++) {
-    gpio_init(inputPins[i]);
-    gpio_set_dir(inputPins[i], GPIO_IN);
-    gpio_pull_up(inputPins[i]);
-    gpio_set_drive_strength(inputPins[i], GPIO_DRIVE_STRENGTH_2MA);
+  for (uint8_t i = 0; i < sizeof(inputGPIOs); i++) {
+    gpio_init(inputGPIOs[i]);
+    gpio_set_dir(inputGPIOs[i], GPIO_IN);
+    gpio_pull_up(inputGPIOs[i]);
+    gpio_set_drive_strength(inputGPIOs[i], GPIO_DRIVE_STRENGTH_2MA);
   }
 }
 
@@ -231,23 +263,21 @@ void setup_joysticks() {
 //--------------------------------------------------------------------+
 // BLINKING TASK
 //--------------------------------------------------------------------+
-static inline void led_blinking_task(void)
+static inline void led_blinking_task()
 {
   static uint32_t next_us = 0;
 
   if (blink_timeout_us && reached(blink_timeout_us)) {
-    blink_interval_us = BLINK_OFF;
-    blink_timeout_us = 0;
-    led_state = false;
-    board_led_write(false);
+    led_set_blink_mode(BLINK_OFF);
     return;
   }
 
   // blink is disabled
-  if (!blink_interval_us) return;
+  if (blink_interval_us == BLINK_OFF) return;
 
   // Blink every interval ms
   if (!reached(next_us)) return; // not enough time
+
   next_us = time_after_us(blink_interval_us);
 
   // TOGGLE
@@ -255,58 +285,14 @@ static inline void led_blinking_task(void)
   board_led_write(led_state);
 }
 
-/*------------- MAIN -------------*/
-int main(void)
-{
-  stdio_init_all();
-  printf("DualJoy starting...\n");
-
-  board_init();
-
-  sleep_ms(10);
-
-  // init device stack on configured roothub port
-  tud_init(BOARD_TUD_RHPORT);
-
-  sleep_ms(10);
-
-  if (board_init_after_tusb) {
-    board_init_after_tusb();
-  }
-
-  sleep_ms(10);
-
-  setup_joysticks();
-
-  sleep_ms(10);
-
-  while (!tud_mounted())
-  {
-    tud_task(); // tinyusb device task
-    led_blinking_task();
-  }
-
-  while (1)
-  {
-    tud_task(); // tinyusb device task
-    led_blinking_task();
-    update_states();
-    sleep_us(100);
-    if (blink_interval_us == BLINK_SUSPENDED) {
-      sleep_ms(100);
-    }
-  }
-}
-
 //--------------------------------------------------------------------+
-// Device callbacks
+// USB Device callbacks
 //--------------------------------------------------------------------+
 
 // Invoked when device is mounted
 void tud_mount_cb(void)
 {
   printf("%s called\n", __func__);
-  blink_interval_us = BLINK_OFF;
   led_blink_fast_until(time_after_us(1000 * 1000));
 }
 
@@ -314,17 +300,16 @@ void tud_mount_cb(void)
 void tud_umount_cb(void)
 {
   printf("%s called\n", __func__);
-  blink_interval_us = BLINK_NOT_MOUNTED;
+  led_set_blink_mode(BLINK_NOT_MOUNTED);
 }
 
 // Invoked when usb bus is suspended
 // remote_wakeup_en : if host allow us  to perform remote wakeup
 // Within 7ms, device must draw an average of current less than 2.5 mA from bus
-void tud_suspend_cb(bool remote_wakeup_en)
+void tud_suspend_cb(bool)
 {
   printf("%s called\n", __func__);
-  (void) remote_wakeup_en;
-  blink_interval_us = BLINK_SUSPENDED;
+  led_set_blink_mode(BLINK_SUSPENDED);
 }
 
 // Invoked when usb bus is resumed
@@ -334,7 +319,7 @@ void tud_resume_cb(void)
   if (tud_mounted()) {
     led_blink_fast_until(time_after_us(500 * 1000));
   } else {
-    blink_interval_us = BLINK_NOT_MOUNTED;
+   led_set_blink_mode(BLINK_NOT_MOUNTED);
   }
 }
 
@@ -371,3 +356,45 @@ void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_
   (void) instance;
 }
 
+
+/*------------- MAIN -------------*/
+
+int main(void)
+{
+  stdio_init_all();
+  printf("DualJoy starting...\n");
+
+  board_init();
+
+  sleep_ms(10);
+
+  // init device stack on configured roothub port
+  tud_init(BOARD_TUD_RHPORT);
+
+  sleep_ms(10);
+
+  if (board_init_after_tusb) {
+    board_init_after_tusb();
+  }
+
+  sleep_ms(10);
+
+  setup_gpios();
+
+  sleep_ms(10);
+
+  while (!tud_mounted()) {
+    tud_task(); // tinyusb device task
+    led_blinking_task();
+  }
+
+  while (1) {
+    tud_task(); // tinyusb device task
+    led_blinking_task();
+    update_states_task();
+    sleep_us(50);
+    if (tud_suspended()) {
+      sleep_ms(500);
+    }
+  }
+}

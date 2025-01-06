@@ -170,11 +170,11 @@ enum {
 #define EPNUM_HID1   0x81
 #define EPNUM_HID2   0x82
 
-#define USBD_CDC_EP_CMD (0x83)
-#define USBD_CDC_EP_OUT (0x02)
-#define USBD_CDC_EP_IN (0x84)
-#define USBD_CDC_CMD_MAX_SIZE (8)
-#define USBD_CDC_IN_OUT_MAX_SIZE (64)
+#define CDC_EP_CMD (0x83)
+#define CDC_EP_OUT (0x02)
+#define CDC_EP_IN (0x84)
+#define CDC_CMD_MAX_SIZE (8)
+#define CDC_IN_OUT_MAX_SIZE (64)
 
 uint8_t const desc_configuration[] =
 {
@@ -184,9 +184,9 @@ uint8_t const desc_configuration[] =
   // Interface number, string index, protocol, report descriptor len, EP In address, size & polling interval
   TUD_HID_DESCRIPTOR(ITF_NUM_HID1, STRID_JOYSTICK1, HID_ITF_PROTOCOL_NONE, sizeof(desc_hid_report1), EPNUM_HID1, CFG_TUD_HID_EP_BUFSIZE, 5),
   TUD_HID_DESCRIPTOR(ITF_NUM_HID2, STRID_JOYSTICK2, HID_ITF_PROTOCOL_NONE, sizeof(desc_hid_report2), EPNUM_HID2, CFG_TUD_HID_EP_BUFSIZE, 5),
-  #ifdef LIB_PICO_STDIO_USB
-  TUD_CDC_DESCRIPTOR(ITF_NUM_CDC, STRID_CDC, USBD_CDC_EP_CMD,USBD_CDC_CMD_MAX_SIZE, USBD_CDC_EP_OUT, USBD_CDC_EP_IN, USBD_CDC_IN_OUT_MAX_SIZE),
-  #endif
+#ifdef LIB_PICO_STDIO_USB
+  TUD_CDC_DESCRIPTOR(ITF_NUM_CDC, STRID_CDC, CDC_EP_CMD,CDC_CMD_MAX_SIZE, CDC_EP_OUT, CDC_EP_IN, CDC_IN_OUT_MAX_SIZE),
+#endif
 };
 
 // Invoked when received GET CONFIGURATION DESCRIPTOR
