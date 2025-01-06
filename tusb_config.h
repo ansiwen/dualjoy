@@ -104,8 +104,29 @@
 #define CFG_TUD_HID_EP_COUNT      2    // Number of HID endpoints
 #define CFG_TUD_HID_INSTANCE_COUNT 2   // Number of HID instances
 
-// #define CFG_TUD_CDC_RX_BUFSIZE  (256)
-// #define CFG_TUD_CDC_TX_BUFSIZE  (256)
+#ifdef LIB_PICO_STDIO_USB
+#undef CFG_TUD_CDC
+#undef CFG_TUD_VENDOR
+//--- CDC stuff ---//
+#define CFG_TUD_CDC             (1)
+#define CFG_TUD_CDC_RX_BUFSIZE  (256)
+#define CFG_TUD_CDC_TX_BUFSIZE  (256)
+
+#include "pico/stdio_usb.h"
+
+// We use a vendor specific interface but with our own driver
+// Vendor driver only used for Microsoft OS 2.0 descriptor
+#if !PICO_STDIO_USB_RESET_INTERFACE_SUPPORT_MS_OS_20_DESCRIPTOR
+#define CFG_TUD_VENDOR            (0)
+#else
+#define CFG_TUD_VENDOR            (1)
+#define CFG_TUD_VENDOR_RX_BUFSIZE  (256)
+#define CFG_TUD_VENDOR_TX_BUFSIZE  (256)
+#endif
+
+#define PICO_STDIO_USB_ENABLE_RESET_VIA_BAUD_RATE 1
+#define PICO_STDIO_USB_ENABLE_RESET_VIA_VENDOR_INTERFACE 1
+#endif
 
 #ifdef __cplusplus
  }

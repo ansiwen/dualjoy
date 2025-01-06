@@ -5,7 +5,6 @@ cmake_minimum_required(VERSION 3.13)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-set(LOG 3)
 
 # Initialise pico_sdk from installed location
 # (note this can come from environment, CMake cache etc)
@@ -36,12 +35,11 @@ pico_sdk_init()
 
 # Add executable. Default name is the project name, version 0.1
 
-cmake_minimum_required(VERSION 3.13)
-
 add_executable(dualjoy)
 
-#pico_enable_stdio_usb(dualjoy 1)
-#pico_enable_stdio_uart(dualjoy 0)
+pico_enable_stdio_usb(dualjoy 1)
+pico_enable_stdio_uart(dualjoy 0)
+set(LOG 2)
 
 target_sources(dualjoy PUBLIC
         ${CMAKE_CURRENT_LIST_DIR}/main.c
@@ -57,7 +55,7 @@ target_include_directories(dualjoy PUBLIC
 target_link_libraries(dualjoy PUBLIC pico_stdlib pico_unique_id tinyusb_device tinyusb_board)
 
 # Uncomment this line to enable fix for Errata RP2040-E5 (the fix requires use of GPIO 15)
-#target_compile_definitions(dualjoy PUBLIC PICO_RP2040_USB_DEVICE_ENUMERATION_FIX=1)
+target_compile_definitions(dualjoy PUBLIC PICO_RP2040_USB_DEVICE_ENUMERATION_FIX=1)
 
 pico_add_extra_outputs(dualjoy)
 

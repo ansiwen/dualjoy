@@ -30,7 +30,6 @@
 #include "pico/stdlib.h"
 #include "hardware/gpio.h"
 #include "bsp/board_api.h"
-#include "hardware/clocks.h"
 #include "tusb.h"
 
 #include "usb_descriptors.h"
@@ -44,92 +43,161 @@
  * - 1000 ms : device mounted
  * - 2500 ms : device is suspended
  */
-enum  {
+enum {
+  BLINK_OFF = 0,
   BLINK_NOT_MOUNTED = 250 * 1000,
-  BLINK_MOUNTED = 1000 * 1000,
   BLINK_SUSPENDED = 2500 * 1000,
+  DEBOUNCE_TIMEOUT_US = 20 * 1000,
+  EVENT_FLASH_US = 30 * 1000,
+  BLINK_FAST_US = 50 * 1000,
 };
 
+#define ARRAY_SIZE(_arr) ( sizeof(_arr) / sizeof(_arr[0]) )
+
 static uint32_t blink_interval_us = BLINK_NOT_MOUNTED;
+static uint32_t blink_timeout_us = 0;
+static bool led_state = false;
 
 
 // ----------------------------- JOYSTICK BEGIN ----------------------------
-
-#define JOYSTICK_REPORT_ID  0x04
-#define JOYSTICK2_REPORT_ID 0x05
-
-#define JOYSTICK_STATE_SIZE 3
 
 //DB9-connector:
 //C64/Sega Mastersystem: 1 = up, 2 = down, 3 = left, 4 = right, 6 = btn1, 8 = gnd, 9 = btn2
 //MSX: 1 = up, 2 = down, 3 = left, 4 = right, 6 = btn1, 7 = btn2, 8 = gnd
 
-#define J1_UP 5
-#define J1_DOWN 4
-#define J1_LEFT 3
-#define J1_RIGHT 2
-#define J1_BTN 27
+enum {
+  J1_UP = 5,
+  J1_DOWN = 4,
+  J1_LEFT = 3,
+  J1_RIGHT = 2,
+  J1_BTN = 27,
 
-#define J2_UP 9
-#define J2_DOWN 8
-#define J2_LEFT 7
-#define J2_RIGHT 6
-#define J2_BTN 26
+  J2_UP = 9,
+  J2_DOWN = 8,
+  J2_LEFT = 7,
+  J2_RIGHT = 6,
+  J2_BTN = 26,
+};
 
-
-#define J1_MASK (1 << J1_UP | 1 << J1_DOWN | 1 << J1_LEFT | 1 << J1_RIGHT | 1 << J1_BTN)
-#define J2_MASK (1 << J2_UP | 1 << J2_DOWN | 1 << J2_LEFT | 1 << J2_RIGHT | 1 << J2_BTN)
-
-#define GPIO_MASK (J1_MASK | J2_MASK)
-
-#define BIT_MASK(data, bit) ((data & (1 << bit)))
-// #define SET_BIT(data, bit) (data |= (1 << bit))
-// #define CLR_BIT(data, bit) (data &= ~(1 << bit))
-// #define TOG_BIT(data, bit) (data ^= (1 << bit))
-
-#define STATE_EQUAL(a, b, c) (a[c] == b[c] && a[c + 1] == b[c + 1] && a[c + 2] == b[c + 2])
-#define STATE_COPY(a, b, c) do { a[c] = b[c]; a[c + 1] = b[c + 1]; a[c + 2] = b[c + 2]; } while(0)
+enum {
+  UP = 0,
+  DOWN,
+  LEFT,
+  RIGHT,
+  BTN,
+  STATE_NUM
+};
 
 const uint8_t inputPins[] =  {
   J1_UP, J1_DOWN, J1_LEFT, J1_RIGHT, J1_BTN,
   J2_UP, J2_DOWN, J2_LEFT, J2_RIGHT, J2_BTN
 };
 
-static uint8_t state[JOYSTICK_STATE_SIZE * 2] = { 0 };
-static uint32_t timeout[JOYSTICK_STATE_SIZE * 2] = { 0 };
+const uint32_t inputMasks[ARRAY_SIZE(inputPins)] = {
+  1 << J1_UP, 1 << J1_DOWN, 1 << J1_LEFT, 1 << J1_RIGHT, 1 << J1_BTN,
+  1 << J2_UP, 1 << J2_DOWN, 1 << J2_LEFT, 1 << J2_RIGHT, 1 << J2_BTN
+};
+
+typedef struct {
+  uint32_t timeout;
+  bool val;
+} pin_state;
+
+static pin_state states[ARRAY_SIZE(inputPins)] = { 0};
+
+static inline uint8_t states2direction(pin_state s[STATE_NUM]) {
+  if (s[UP].val) {
+    if (s[RIGHT].val)
+      return 2;  // NE
+    else if (s[LEFT].val)
+      return 8;  // NW
+    else
+      return 1;  // N
+  }
+  else if (s[DOWN].val) {
+    if (s[RIGHT].val)
+      return 4;  // SE
+    else if (s[LEFT].val)
+      return 6;  // SW
+    else
+      return 5;  // S
+  }
+  else if (s[RIGHT].val)
+    return 3;  // E
+  else if (s[LEFT].val)
+    return 7;  // W
+  else
+    return 0;  // Center
+}
+
+static inline bool reached(uint32_t t) {
+  // overflow safe time comparison
+  return (int32_t)(t-time_us_32())<0;
+}
+
+static inline uint32_t time_after_us(uint32_t us) {
+  return (time_us_32() + us) | 1; // make sure it's never 0 after overflow
+}
+
+static inline void led_flash() {
+  led_state = !led_state;
+  board_led_write(led_state);
+  blink_timeout_us = time_after_us(EVENT_FLASH_US);
+}
+
+static inline void led_blink_fast_until(uint32_t timeout) {
+  blink_timeout_us = timeout;
+  blink_interval_us = BLINK_FAST_US;
+}
+
+typedef struct {
+  uint8_t direction;
+  uint8_t buttons;
+} report;
+
+#define REPORT_EQUAL(a, b) (a.direction == b.direction && a.buttons == b.buttons)
+#define REPORT_COPY(a, b) do { a.direction = b.direction; a.buttons = b.buttons; } while (0)
 
 static inline void send_states() {
-  static uint8_t last[JOYSTICK_STATE_SIZE * 2] = {255, 255, 255, 255, 255, 255};
-  if (!STATE_EQUAL(last, state, 0)) {
-    printf("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX J1: %d %d %d\n", state[0], state[1], state[2]);
-    if (!tud_hid_n_report(0, JOYSTICK_REPORT_ID, &state[0], JOYSTICK_STATE_SIZE)) {
-      printf("###################################### failed to send report\n");
+  static report last1;
+  static report last2;
+
+  report report;
+  report.direction = states2direction(&states[0]);
+  report.buttons = states[BTN].val ? 1 : 0;
+
+  if (!REPORT_EQUAL(last1, report)) {
+    printf("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX J1: %d %x\n", report.direction, report.buttons);
+    if (tud_hid_n_report(0, JOYSTICK_REPORT_ID, &report, sizeof(report))) {
+      led_flash();
+      REPORT_COPY(last1, report);
     } else {
-      STATE_COPY(last, state, 0);
+      printf("###################################### failed to send report\n");
     }
-    // tud_hid_n_gamepad_report(0, JOYSTICK_REPORT_ID, (int8_t)(state[1]-127), (int8_t)(state[2]-127), 0, 0, 0, 0, 0, (uint32_t)state[0]);
   }
-  if (!STATE_EQUAL(last, state, JOYSTICK_STATE_SIZE)) {
-    printf("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX J2: %d %d %d\n", state[3], state[4], state[5]);
-    if (!tud_hid_n_report(1, JOYSTICK2_REPORT_ID, &state[3], JOYSTICK_STATE_SIZE)) {
-      printf("###################################### failed to send report\n");
+
+  report.direction = states2direction(&states[STATE_NUM]);
+  report.buttons = states[STATE_NUM+BTN].val ? 1 : 0;
+
+  if (!REPORT_EQUAL(last2, report)) {
+    printf("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX J2: %d %x\n", report.direction, report.buttons);
+    if (tud_hid_n_report(1, JOYSTICK2_REPORT_ID, &report, sizeof(report))) {
+      led_flash();
+      REPORT_COPY(last2, report);
     } else {
-      STATE_COPY(last, state, JOYSTICK_STATE_SIZE);
+      printf("###################################### failed to send report\n");
     }
-    // tud_hid_n_gamepad_report(1, JOYSTICK2_REPORT_ID, (int8_t)(state[4]-127), (int8_t)(state[5]-127), 0, 0, 0, 0, 0, (uint32_t)state[3]);
   }
 }
 
-// static int64_t alarm_callback(alarm_id_t, void *);
-
-static inline void set_state(uintptr_t i, uint8_t value) {
-  if (state[i] != value) {
-    if (timeout[i] < time_us_32()) {
-      printf("%s changing state %d from %d to %d\n", __func__, i, state[i], value);
-      state[i] = value;
-      timeout[i] = time_us_32() + 40 * 1000;
+static inline void set_state(pin_state *s, bool value) {
+  if (s->val != value) {
+    if (reached(s->timeout)) {
+      printf("%s changing pin_state %d from %d to %d\n", __func__, s-&states[0], s->val, value);
+      s->val = value;
+      s->timeout = time_after_us(DEBOUNCE_TIMEOUT_US);
     } else {
-        printf("%s skipping %d because recent change\n", __func__, i);
+        printf("%s skipping %d because recent change\n", __func__, s-&states[0]);
     }
   }
 }
@@ -137,77 +205,80 @@ static inline void set_state(uintptr_t i, uint8_t value) {
 static inline void update_states() {
   uint32_t gpios = gpio_get_all();
 
-  //printf("%s gpios: %b\n", __func__, gpios & GPIO_MASK);
-
-  set_state(0, !BIT_MASK(gpios, J1_BTN));
-  if (!BIT_MASK(gpios, J1_LEFT)) set_state(1, J_MIN); /* left */
-  else if (!BIT_MASK(gpios, J1_RIGHT)) set_state(1, J_MAX); /* right */
-  else set_state(1, J_MID);
-  if (!BIT_MASK(gpios, J1_UP)) set_state(2, J_MIN); /* up */
-  else if (!BIT_MASK(gpios, J1_DOWN)) set_state(2, J_MAX); /* down */
-  else set_state(2, J_MID);
-
-  set_state(JOYSTICK_STATE_SIZE + 0, !BIT_MASK(gpios, J2_BTN));
-  if (!BIT_MASK(gpios, J2_LEFT)) set_state(JOYSTICK_STATE_SIZE + 1, J_MIN); /* left */
-  else if (!BIT_MASK(gpios, J2_RIGHT)) set_state(JOYSTICK_STATE_SIZE + 1, J_MAX); /* right */
-  else set_state(JOYSTICK_STATE_SIZE + 1, J_MID);
-  if (!BIT_MASK(gpios, J2_UP)) set_state(JOYSTICK_STATE_SIZE + 2, J_MIN); /* up */
-  else if (!BIT_MASK(gpios, J2_DOWN)) set_state(JOYSTICK_STATE_SIZE + 2, J_MAX); /* down */
-  else set_state(JOYSTICK_STATE_SIZE + 2, J_MID);
+  // here comes some over-engineering
+  const uint32_t *mask_p = &inputMasks[0];
+  pin_state *state_p = &states[0];
+  while (mask_p != &inputMasks[ARRAY_SIZE(inputMasks)]) {
+    set_state(state_p++, (gpios & *(mask_p++)) == 0);
+  }
 
   send_states();
 }
 
-// static int64_t alarm_callback(alarm_id_t id, void *user_data) {
-//   uintptr_t i = (uintptr_t)user_data;
-//   printf("%s id:%d user_data:%d\n", __func__, id, (uintptr_t)user_data);
-//   timeout[i] = 0;
-// //  update_states(0, 0);
-//   return 0;
-// }
-
 void setup_joysticks() {
   //set all DB9-connector input signal pins as inputs with pullups
   for (uint8_t i = 0; i < sizeof(inputPins); i++) {
-    gpio_set_input_enabled(inputPins[i], true);
-    gpio_set_pulls(inputPins[i], true, false); // PULLUP
+    gpio_init(inputPins[i]);
+    gpio_set_dir(inputPins[i], GPIO_IN);
+    gpio_pull_up(inputPins[i]);
+    gpio_set_drive_strength(inputPins[i], GPIO_DRIVE_STRENGTH_2MA);
   }
-  // gpio_set_irq_callback(update_states);
-  // for (uint8_t i = 0; i < sizeof(inputPins); i++) {
-  //   gpio_set_irq_enabled(inputPins[i], GPIO_IRQ_EDGE_RISE | GPIO_IRQ_EDGE_FALL, true);
-  // }
-  // irq_set_enabled(IO_IRQ_BANK0, true);
 }
 
 // ------------------------------JOYSTICK END ------------------------------
 
 
-static inline void led_blinking_task(void);
+//--------------------------------------------------------------------+
+// BLINKING TASK
+//--------------------------------------------------------------------+
+static inline void led_blinking_task(void)
+{
+  static uint32_t next_us = 0;
+
+  if (blink_timeout_us && reached(blink_timeout_us)) {
+    blink_interval_us = BLINK_OFF;
+    blink_timeout_us = 0;
+    led_state = false;
+    board_led_write(false);
+    return;
+  }
+
+  // blink is disabled
+  if (!blink_interval_us) return;
+
+  // Blink every interval ms
+  if (!reached(next_us)) return; // not enough time
+  next_us = time_after_us(blink_interval_us);
+
+  // TOGGLE
+  led_state = !led_state;
+  board_led_write(led_state);
+}
 
 /*------------- MAIN -------------*/
 int main(void)
 {
   stdio_init_all();
-  printf("starting...\n");
+  printf("DualJoy starting...\n");
 
   board_init();
 
-  sleep_ms(100);
+  sleep_ms(10);
 
   // init device stack on configured roothub port
   tud_init(BOARD_TUD_RHPORT);
 
-  sleep_ms(100);
+  sleep_ms(10);
 
   if (board_init_after_tusb) {
     board_init_after_tusb();
   }
 
-  sleep_ms(100);
+  sleep_ms(10);
 
   setup_joysticks();
 
-  sleep_ms(100);
+  sleep_ms(10);
 
   while (!tud_mounted())
   {
@@ -221,6 +292,9 @@ int main(void)
     led_blinking_task();
     update_states();
     sleep_us(100);
+    if (blink_interval_us == BLINK_SUSPENDED) {
+      sleep_ms(100);
+    }
   }
 }
 
@@ -232,7 +306,8 @@ int main(void)
 void tud_mount_cb(void)
 {
   printf("%s called\n", __func__);
-  blink_interval_us = BLINK_MOUNTED;
+  blink_interval_us = BLINK_OFF;
+  led_blink_fast_until(time_after_us(1000 * 1000));
 }
 
 // Invoked when device is unmounted
@@ -256,9 +331,12 @@ void tud_suspend_cb(bool remote_wakeup_en)
 void tud_resume_cb(void)
 {
   printf("%s called\n", __func__);
-  blink_interval_us = tud_mounted() ? BLINK_MOUNTED : BLINK_NOT_MOUNTED;
+  if (tud_mounted()) {
+    led_blink_fast_until(time_after_us(500 * 1000));
+  } else {
+    blink_interval_us = BLINK_NOT_MOUNTED;
+  }
 }
-
 
 // Invoked when sent REPORT successfully to host
 // Application can use this to send the next report
@@ -291,48 +369,5 @@ void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_
 {
   printf("%s called\n", __func__);
   (void) instance;
-
-  // if (report_type == HID_REPORT_TYPE_OUTPUT)
-  // {
-  //   // Set keyboard LED e.g Capslock, Numlock etc...
-  //   if (report_id == REPORT_ID_KEYBOARD)
-  //   {
-  //     // bufsize should be (at least) 1
-  //     if ( bufsize < 1 ) return;
-
-  //     uint8_t const kbd_leds = buffer[0];
-
-  //     if (kbd_leds & KEYBOARD_LED_CAPSLOCK)
-  //     {
-  //       // Capslock On: disable blink, turn led on
-  //       blink_interval_us = 0;
-  //       board_led_write(true);
-  //     }else
-  //     {
-  //       // Caplocks Off: back to normal blink
-  //       board_led_write(false);
-  //       blink_interval_us = BLINK_MOUNTED;
-  //     }
-  //   }
-  // }
 }
 
-//--------------------------------------------------------------------+
-// BLINKING TASK
-//--------------------------------------------------------------------+
-static inline void led_blinking_task(void)
-{
-  static uint32_t next_us = 0;
-  static bool led_state = false;
-
-  // blink is disabled
-  if (!blink_interval_us) return;
-
-  // Blink every interval ms
-  uint32_t now = time_us_32();
-  if ( now < next_us) return; // not enough time
-  next_us = now + blink_interval_us;
-
-  board_led_write(led_state);
-  led_state = 1 - led_state; // toggle
-}

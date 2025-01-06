@@ -76,65 +76,45 @@ uint8_t const * tud_descriptor_device_cb(void)
 // HID Report Descriptor
 //--------------------------------------------------------------------+
 
-// uint8_t const desc_hid_report[] =
-// {
-//   TUD_HID_REPORT_DESC_KEYBOARD( HID_REPORT_ID(REPORT_ID_KEYBOARD         )),
-//   TUD_HID_REPORT_DESC_MOUSE   ( HID_REPORT_ID(REPORT_ID_MOUSE            )),
-//   TUD_HID_REPORT_DESC_CONSUMER( HID_REPORT_ID(REPORT_ID_CONSUMER_CONTROL )),
-//   TUD_HID_REPORT_DESC_GAMEPAD ( HID_REPORT_ID(REPORT_ID_GAMEPAD          ))
-// };
-
 //  Joystick (Gamepad)
 
-#define HIDDESC_MACRO(REPORT_ID) \
-    /* Joystick # */ \
-    0x05, 0x01,               /* USAGE_PAGE (Generic Desktop) */ \
-    0x09, 0x04,               /* USAGE (Joystick) */ \
-    0xa1, 0x01,               /* COLLECTION (Application) */ \
-    0x85, REPORT_ID,          /* REPORT_ID */ \
-    /* 2 Buttons */ \
-    0x05, 0x09,               /*   USAGE_PAGE (Button) */ \
-    0x19, 0x01,               /*   USAGE_MINIMUM (Button 1) */ \
-    0x29, 0x01,               /*   USAGE_MAXIMUM (Button 1) */ \
-    0x15, 0x00,               /*   LOGICAL_MINIMUM (0) */ \
-    0x25, 0x01,               /*   LOGICAL_MAXIMUM (1) */ \
-    0x75, 0x01,               /*   REPORT_SIZE (1) */ \
-    0x95, 0x08,               /*   REPORT_COUNT (8) (full byte) */ \
-    0x81, 0x02,               /*   INPUT (Data,Var,Abs) */ \
-    /* X and Y Axis */ \
-    0x05, 0x01,               /*   USAGE_PAGE (Generic Desktop) */ \
-    0x09, 0x01,               /*   USAGE (Pointer) */ \
-    0xA1, 0x00,               /*   COLLECTION (Physical) */ \
-    0x09, 0x30,               /*     USAGE (x) */ \
-    0x09, 0x31,               /*     USAGE (y) */ \
-    0x15, J_MIN,               /*     LOGICAL_MINIMUM (-127) */ \
-    0x26, J_MAX, 0x00,         /*     LOGICAL_MAXIMUM (127) */ \
-    0x75, 0x08,               /*     REPORT_SIZE (8) */ \
-    0x95, 0x02,               /*     REPORT_COUNT (2) */ \
-    0x81, 0x02,               /*     INPUT (Data,Var,Abs) */ \
-    0xc0,                     /*   END_COLLECTION */ \
-    0xc0                      /* END_COLLECTION */
-
-
-// static const uint8_t desc_hid_report[] = {
-//   HIDDESC_MACRO(JOYSTICK_REPORT_ID),
-//   HIDDESC_MACRO(JOYSTICK2_REPORT_ID)
-// };
+// Joystick Report Descriptor Template
+// with 1 buttons and 1 hat/dpad with following layout
+// | hat/DPAD (1 byte) | Button Map (1 byte) |
+#define TUD_HID_REPORT_DESC_JOYSTICK(...) \
+  HID_USAGE_PAGE ( HID_USAGE_PAGE_DESKTOP     )                 ,\
+  HID_USAGE      ( HID_USAGE_DESKTOP_GAMEPAD  )                 ,\
+  HID_COLLECTION ( HID_COLLECTION_APPLICATION )                 ,\
+    /* Report ID if any */\
+    __VA_ARGS__ \
+    /* 8 bit DPad/Hat Button Map  */ \
+    HID_USAGE_PAGE     ( HID_USAGE_PAGE_DESKTOP                 ) ,\
+    HID_USAGE          ( HID_USAGE_DESKTOP_HAT_SWITCH           ) ,\
+    HID_LOGICAL_MIN    ( 1                                      ) ,\
+    HID_LOGICAL_MAX    ( 8                                      ) ,\
+    HID_PHYSICAL_MIN   ( 0                                      ) ,\
+    HID_PHYSICAL_MAX_N ( 315, 2                                 ) ,\
+    HID_REPORT_COUNT   ( 1                                      ) ,\
+    HID_REPORT_SIZE    ( 8                                      ) ,\
+    HID_INPUT          ( HID_DATA | HID_VARIABLE | HID_ABSOLUTE ) ,\
+    /* 8 bit Button Map */ \
+    HID_USAGE_PAGE     ( HID_USAGE_PAGE_BUTTON                  ) ,\
+    HID_USAGE_MIN      ( 1                                      ) ,\
+    HID_USAGE_MAX      ( 1                                      ) ,\
+    HID_LOGICAL_MIN    ( 0                                      ) ,\
+    HID_LOGICAL_MAX    ( 1                                      ) ,\
+    HID_REPORT_COUNT   ( 1                                      ) ,\
+    HID_REPORT_SIZE    ( 8                                      ) ,\
+    HID_INPUT          ( HID_DATA | HID_VARIABLE | HID_ABSOLUTE ) ,\
+  HID_COLLECTION_END \
 
 static const uint8_t desc_hid_report1[] = {
-  HIDDESC_MACRO(JOYSTICK_REPORT_ID),
-  // TUD_HID_REPORT_DESC_GAMEPAD(HID_REPORT_ID(JOYSTICK_REPORT_ID)),
+  TUD_HID_REPORT_DESC_JOYSTICK(HID_REPORT_ID(JOYSTICK_REPORT_ID)),
 };
 
 static const uint8_t desc_hid_report2[] = {
-  HIDDESC_MACRO(JOYSTICK2_REPORT_ID),
-  // TUD_HID_REPORT_DESC_GAMEPAD(HID_REPORT_ID(JOYSTICK2_REPORT_ID))
+  TUD_HID_REPORT_DESC_JOYSTICK(HID_REPORT_ID(JOYSTICK2_REPORT_ID))
 };
-
-// static const uint8_t desc_hid_report[] = {
-//   HIDDESC_MACRO(JOYSTICK_REPORT_ID),
-//   HIDDESC_MACRO(JOYSTICK2_REPORT_ID)
-// };
 
 // Invoked when received GET HID REPORT DESCRIPTOR
 // Application return pointer to descriptor
@@ -156,17 +136,45 @@ uint8_t const * tud_hid_descriptor_report_cb(uint8_t instance)
 // Configuration Descriptor
 //--------------------------------------------------------------------+
 
+// Interfaces
 enum
 {
   ITF_NUM_HID1,
   ITF_NUM_HID2,
+#ifdef LIB_PICO_STDIO_USB
+  ITF_NUM_CDC,
+  ITF_NUM_CDC_2,
+#endif
   ITF_NUM_TOTAL
 };
 
-#define  CONFIG_TOTAL_LEN  (TUD_CONFIG_DESC_LEN + TUD_HID_DESC_LEN * ITF_NUM_TOTAL)
+// String Descriptor Index
+enum {
+  STRID_LANGID = 0,
+  STRID_MANUFACTURER,
+  STRID_PRODUCT,
+  STRID_SERIAL,
+  STRID_JOYSTICK1,
+  STRID_JOYSTICK2,
+  STRID_CDC,
+};
+
+#define TUD_RPI_RESET_DESC_LEN  9
+
+#ifndef LIB_PICO_STDIO_USB
+#define  CONFIG_TOTAL_LEN  (TUD_CONFIG_DESC_LEN + TUD_HID_DESC_LEN * 2)
+#else
+#define  CONFIG_TOTAL_LEN  (TUD_CONFIG_DESC_LEN + TUD_HID_DESC_LEN * 2 + TUD_CDC_DESC_LEN)
+#endif
 
 #define EPNUM_HID1   0x81
 #define EPNUM_HID2   0x82
+
+#define USBD_CDC_EP_CMD (0x83)
+#define USBD_CDC_EP_OUT (0x02)
+#define USBD_CDC_EP_IN (0x84)
+#define USBD_CDC_CMD_MAX_SIZE (8)
+#define USBD_CDC_IN_OUT_MAX_SIZE (64)
 
 uint8_t const desc_configuration[] =
 {
@@ -174,59 +182,12 @@ uint8_t const desc_configuration[] =
   TUD_CONFIG_DESCRIPTOR(1, ITF_NUM_TOTAL, 0, CONFIG_TOTAL_LEN, 0, 100),
 
   // Interface number, string index, protocol, report descriptor len, EP In address, size & polling interval
-  TUD_HID_DESCRIPTOR(ITF_NUM_HID1, 4, HID_ITF_PROTOCOL_NONE, sizeof(desc_hid_report1), EPNUM_HID1, CFG_TUD_HID_EP_BUFSIZE, 5),
-  TUD_HID_DESCRIPTOR(ITF_NUM_HID2, 5, HID_ITF_PROTOCOL_NONE, sizeof(desc_hid_report2), EPNUM_HID2, CFG_TUD_HID_EP_BUFSIZE, 5)
+  TUD_HID_DESCRIPTOR(ITF_NUM_HID1, STRID_JOYSTICK1, HID_ITF_PROTOCOL_NONE, sizeof(desc_hid_report1), EPNUM_HID1, CFG_TUD_HID_EP_BUFSIZE, 5),
+  TUD_HID_DESCRIPTOR(ITF_NUM_HID2, STRID_JOYSTICK2, HID_ITF_PROTOCOL_NONE, sizeof(desc_hid_report2), EPNUM_HID2, CFG_TUD_HID_EP_BUFSIZE, 5),
+  #ifdef LIB_PICO_STDIO_USB
+  TUD_CDC_DESCRIPTOR(ITF_NUM_CDC, STRID_CDC, USBD_CDC_EP_CMD,USBD_CDC_CMD_MAX_SIZE, USBD_CDC_EP_OUT, USBD_CDC_EP_IN, USBD_CDC_IN_OUT_MAX_SIZE),
+  #endif
 };
-
-#if TUD_OPT_HIGH_SPEED
-// Per USB specs: high speed capable device must report device_qualifier and other_speed_configuration
-
-// other speed configuration
-uint8_t desc_other_speed_config[CONFIG_TOTAL_LEN];
-
-// device qualifier is mostly similar to device descriptor since we don't change configuration based on speed
-tusb_desc_device_qualifier_t const desc_device_qualifier =
-{
-  .bLength            = sizeof(tusb_desc_device_qualifier_t),
-  .bDescriptorType    = TUSB_DESC_DEVICE_QUALIFIER,
-  .bcdUSB             = USB_BCD,
-
-  .bDeviceClass       = 0x00,
-  .bDeviceSubClass    = 0x00,
-  .bDeviceProtocol    = 0x00,
-
-  .bMaxPacketSize0    = CFG_TUD_ENDPOINT0_SIZE,
-  .bNumConfigurations = 0x01,
-  .bReserved          = 0x00
-};
-
-// Invoked when received GET DEVICE QUALIFIER DESCRIPTOR request
-// Application return pointer to descriptor, whose contents must exist long enough for transfer to complete.
-// device_qualifier descriptor describes information about a high-speed capable device that would
-// change if the device were operating at the other speed. If not highspeed capable stall this request.
-uint8_t const* tud_descriptor_device_qualifier_cb(void)
-{
-  printf("%s called\n", __func__);
-  return (uint8_t const*) &desc_device_qualifier;
-}
-
-// Invoked when received GET OTHER SEED CONFIGURATION DESCRIPTOR request
-// Application return pointer to descriptor, whose contents must exist long enough for transfer to complete
-// Configuration descriptor in the other speed e.g if high speed then this is for full speed and vice versa
-uint8_t const* tud_descriptor_other_speed_configuration_cb(uint8_t index)
-{
-  printf("%s called\n", __func__);
-  (void) index; // for multiple configurations
-
-  // other speed config is basically configuration with type = OHER_SPEED_CONFIG
-  memcpy(desc_other_speed_config, desc_configuration, CONFIG_TOTAL_LEN);
-  desc_other_speed_config[1] = TUSB_DESC_OTHER_SPEED_CONFIG;
-
-  // this example use the same configuration for both high and full speed mode
-  return desc_other_speed_config;
-}
-
-#endif // highspeed
 
 // Invoked when received GET CONFIGURATION DESCRIPTOR
 // Application return pointer to descriptor
@@ -244,16 +205,6 @@ uint8_t const * tud_descriptor_configuration_cb(uint8_t index)
 // String Descriptors
 //--------------------------------------------------------------------+
 
-// String Descriptor Index
-enum {
-  STRID_LANGID = 0,
-  STRID_MANUFACTURER,
-  STRID_PRODUCT,
-  STRID_SERIAL,
-  STRID_JOYSTICK1,
-  STRID_JOYSTICK2
-};
-
 // array of pointer to string descriptors
 char const *string_desc_arr[] =
 {
@@ -262,7 +213,8 @@ char const *string_desc_arr[] =
   "DualJoy",                     // 2: Product
   NULL,                          // 3: Serials will use unique ID if possible
   "Joystick 1",                  // 4: Joystick 1
-  "Joystick 2"                   // 5: Joystick 2
+  "Joystick 2",                  // 5: Joystick 2
+  "CDC",                         // 6: CDC
 };
 
 static uint16_t _desc_str[32 + 1];
