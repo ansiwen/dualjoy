@@ -67,7 +67,7 @@ static bool led_state = false;
 //C64/Sega Mastersystem: 1 = up, 2 = down, 3 = left, 4 = right, 6 = btn1, 8 = gnd, 9 = btn2
 //MSX: 1 = up, 2 = down, 3 = left, 4 = right, 6 = btn1, 7 = btn2, 8 = gnd
 
-enum {
+enum gpio {
   J1_UP = 5,
   J1_DOWN = 4,
   J1_LEFT = 3,
@@ -86,30 +86,43 @@ enum {
 
 #define PIN_MASK (J1_MASK | J2_MASK)
 
-enum {
+enum pin {
   UP = 0,
   DOWN,
   LEFT,
   RIGHT,
   BTN,
-  STATE_NUM,
-  PIN_NUM = STATE_NUM * 2,
+  PIN_NUM,
+  TOTAL_PIN_NUM = PIN_NUM * 2,
 };
 
-const uint8_t inputGPIOs[PIN_NUM] =  {
+static const uint8_t inputGPIOs[TOTAL_PIN_NUM] = {
   J1_UP, J1_DOWN, J1_LEFT, J1_RIGHT, J1_BTN,
   J2_UP, J2_DOWN, J2_LEFT, J2_RIGHT, J2_BTN
 };
 
-const uint32_t inputMasks[PIN_NUM] = {
+static const uint32_t inputMasks[TOTAL_PIN_NUM] = {
   1 << J1_UP, 1 << J1_DOWN, 1 << J1_LEFT, 1 << J1_RIGHT, 1 << J1_BTN,
   1 << J2_UP, 1 << J2_DOWN, 1 << J2_LEFT, 1 << J2_RIGHT, 1 << J2_BTN
 };
 
-static uint32_t pin_states = 0;
-static uint32_t pin_timeouts[32] = { 0 };
+static const uint8_t gpio2pin[32] = {
+  [J1_UP] = UP,
+  [J1_DOWN] = DOWN,
+  [J1_LEFT] = LEFT,
+  [J1_RIGHT] = RIGHT,
+  [J1_BTN] = BTN,
+  [J2_UP] = PIN_NUM+UP,
+  [J2_DOWN] = PIN_NUM+DOWN,
+  [J2_LEFT] = PIN_NUM+LEFT,
+  [J2_RIGHT] = PIN_NUM+RIGHT,
+  [J2_BTN] = PIN_NUM+BTN,
+};
 
-static inline uint8_t states2direction(const uint32_t mask[STATE_NUM]) {
+static uint32_t pin_states = 0;
+static uint32_t pin_timeouts[TOTAL_PIN_NUM] = { 0 };
+
+static inline uint8_t states2direction(const uint32_t mask[PIN_NUM]) {
   if (pin_states & mask[UP]) {
     if (pin_states & mask[RIGHT])
       return 2;  // NE
@@ -189,8 +202,8 @@ static inline void send_states() {
       last_r1.buttons = (pin_states & inputMasks[BTN]) ? 1 : 0;
     }
     if (changes & J2_MASK) {
-      last_r2.direction = states2direction(&inputMasks[STATE_NUM]);
-      last_r2.buttons = (pin_states & inputMasks[STATE_NUM+BTN]) ? 1 : 0;
+      last_r2.direction = states2direction(&inputMasks[PIN_NUM]);
+      last_r2.buttons = (pin_states & inputMasks[PIN_NUM+BTN]) ? 1 : 0;
     }
     last_states = pin_states;
   }
@@ -236,19 +249,19 @@ static inline void update_states_task() {
     const uint32_t mask = changes & -changes; // isolate least significant changed bit
     changes &= ~mask; // remove that bit from changes
     const uint8_t i = fast_log2_of_pow2(mask); // calculate bit position
-    if (reached(pin_timeouts[i])) {
-      trace("%s changing state of pin %d to %d\n", __func__, i, !(pin_states & mask));
+    if (reached(pin_timeouts[gpio2pin[i]])) {
+      trace("%s changing pin_state %d to %d\n", __func__, i, !(pin_states & mask));
       pin_states ^= mask;
-      pin_timeouts[i] = time_after_us(DEBOUNCE_TIMEOUT_US);
+      pin_timeouts[gpio2pin[i]] = time_after_us(DEBOUNCE_TIMEOUT_US);
     } else {
-        trace("%s skipping %d because recent change\n", __func__, i);
+        trace("%s skipping pin_state %d because recent change\n", __func__, i);
     }
   }
 
   send_states();
 }
 
-void setup_gpios() {
+static inline void setup_gpios() {
   //set all DB9-connector input signal pins as inputs with pullups
   for (uint8_t i = 0; i < sizeof(inputGPIOs); i++) {
     gpio_init(inputGPIOs[i]);
@@ -330,7 +343,6 @@ void tud_resume_cb(void)
 void tud_hid_report_complete_cb(uint8_t instance, uint8_t const* report, uint16_t len)
 {
   trace("%s instance:%d\n", __func__, instance);
-  (void) len;
 }
 
 // Invoked when received GET_REPORT control request
@@ -339,13 +351,6 @@ void tud_hid_report_complete_cb(uint8_t instance, uint8_t const* report, uint16_
 uint16_t tud_hid_get_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_t report_type, uint8_t* buffer, uint16_t reqlen)
 {
   trace("%s called\n", __func__);
-  // TODO not Implemented
-  (void) instance;
-  (void) report_id;
-  (void) report_type;
-  (void) buffer;
-  (void) reqlen;
-
   return 0;
 }
 
@@ -354,7 +359,6 @@ uint16_t tud_hid_get_report_cb(uint8_t instance, uint8_t report_id, hid_report_t
 void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_t report_type, uint8_t const* buffer, uint16_t bufsize)
 {
   trace("%s called\n", __func__);
-  (void) instance;
 }
 
 
@@ -393,9 +397,9 @@ int main(void)
     tud_task(); // tinyusb device task
     led_blinking_task();
     update_states_task();
-    sleep_us(50);
+    sleep_ms(1); // ~= 1000Hz sampling
     if (tud_suspended()) {
-      sleep_ms(500);
+      sleep_ms(100);
     }
   }
 }
