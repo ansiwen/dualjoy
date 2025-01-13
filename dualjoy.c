@@ -67,19 +67,36 @@ static bool led_state = false;
 //C64/Sega Mastersystem: 1 = up, 2 = down, 3 = left, 4 = right, 6 = btn1, 8 = gnd, 9 = btn2
 //MSX: 1 = up, 2 = down, 3 = left, 4 = right, 6 = btn1, 7 = btn2, 8 = gnd
 
-enum gpio {
-  J1_UP = 5,
-  J1_DOWN = 4,
-  J1_LEFT = 3,
-  J1_RIGHT = 2,
-  J1_BTN = 27,
+// for prototype
+// enum gpio {
+//   J1_UP = 5,
+//   J1_DOWN = 4,
+//   J1_LEFT = 3,
+//   J1_RIGHT = 2,
+//   J1_BTN = 27,
 
-  J2_UP = 9,
-  J2_DOWN = 8,
-  J2_LEFT = 7,
-  J2_RIGHT = 6,
-  J2_BTN = 26,
+//   J2_UP = 9,
+//   J2_DOWN = 8,
+//   J2_LEFT = 7,
+//   J2_RIGHT = 6,
+//   J2_BTN = 26,
+// };
+
+// for production
+enum gpio {
+  J1_UP = 10,
+  J1_DOWN = 11,
+  J1_LEFT = 12,
+  J1_RIGHT = 13,
+  J1_BTN = 9,
+
+  J2_UP = 18,
+  J2_DOWN = 19,
+  J2_LEFT = 20,
+  J2_RIGHT = 21,
+  J2_BTN = 17,
 };
+
 
 #define J1_MASK (1<<J1_UP | 1<<J1_DOWN | 1<<J1_LEFT | 1<<J1_RIGHT | 1<<J1_BTN)
 #define J2_MASK (1<<J2_UP | 1<<J2_DOWN | 1<<J2_LEFT | 1<<J2_RIGHT | 1<<J2_BTN)
