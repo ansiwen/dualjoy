@@ -91,13 +91,20 @@ uint8_t const * tud_descriptor_device_cb(void)
     /* 8 bit DPad/Hat Button Map  */ \
     HID_USAGE_PAGE     ( HID_USAGE_PAGE_DESKTOP                 ) ,\
     HID_USAGE          ( HID_USAGE_DESKTOP_HAT_SWITCH           ) ,\
-    HID_LOGICAL_MIN    ( 1                                      ) ,\
-    HID_LOGICAL_MAX    ( 8                                      ) ,\
+    HID_LOGICAL_MIN    ( 0                                      ) ,\
+    HID_LOGICAL_MAX    ( 7                                      ) ,\
     HID_PHYSICAL_MIN   ( 0                                      ) ,\
     HID_PHYSICAL_MAX_N ( 315, 2                                 ) ,\
+    HID_UNIT_EXPONENT  ( 0x00                                   ) ,\
+    HID_UNIT           ( 0x14                                   ) ,\
     HID_REPORT_COUNT   ( 1                                      ) ,\
     HID_REPORT_SIZE    ( 8                                      ) ,\
-    HID_INPUT          ( HID_DATA | HID_VARIABLE | HID_ABSOLUTE ) ,\
+    HID_INPUT          ( HID_DATA | HID_VARIABLE | HID_ABSOLUTE | HID_NULL_STATE ) ,\
+    /* Reset physical/unit globals before button section */ \
+    HID_UNIT_EXPONENT  ( 0x00                                   ) ,\
+    HID_UNIT           ( 0                                      ) ,\
+    HID_PHYSICAL_MIN   ( 0                                      ) ,\
+    HID_PHYSICAL_MAX   ( 0                                      ) ,\
     /* 8 bit Button Map */ \
     HID_USAGE_PAGE     ( HID_USAGE_PAGE_BUTTON                  ) ,\
     HID_USAGE_MIN      ( 1                                      ) ,\
@@ -105,8 +112,12 @@ uint8_t const * tud_descriptor_device_cb(void)
     HID_LOGICAL_MIN    ( 0                                      ) ,\
     HID_LOGICAL_MAX    ( 1                                      ) ,\
     HID_REPORT_COUNT   ( 1                                      ) ,\
-    HID_REPORT_SIZE    ( 8                                      ) ,\
+    HID_REPORT_SIZE    ( 1                                      ) ,\
     HID_INPUT          ( HID_DATA | HID_VARIABLE | HID_ABSOLUTE ) ,\
+    /* 7 bit padding */ \
+    HID_REPORT_COUNT   ( 7                                      ) ,\
+    HID_REPORT_SIZE    ( 1                                      ) ,\
+    HID_INPUT          ( HID_CONSTANT                           ) ,\
   HID_COLLECTION_END \
 
 static const uint8_t desc_hid_report1[] = {

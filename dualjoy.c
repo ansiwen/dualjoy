@@ -142,26 +142,26 @@ static uint32_t pin_timeouts[TOTAL_PIN_NUM] = { 0 };
 static inline uint8_t states2direction(const uint32_t mask[PIN_NUM]) {
   if (pin_states & mask[UP]) {
     if (pin_states & mask[RIGHT])
-      return 2;  // NE
+      return 1;  // NE
     else if (pin_states & mask[LEFT])
-      return 8;  // NW
+      return 7;  // NW
     else
-      return 1;  // N
+      return 0;  // N
   }
   else if (pin_states & mask[DOWN]) {
     if (pin_states & mask[RIGHT])
-      return 4;  // SE
+      return 3;  // SE
     else if (pin_states & mask[LEFT])
-      return 6;  // SW
+      return 5;  // SW
     else
-      return 5;  // S
+      return 4;  // S
   }
   else if (pin_states & mask[RIGHT])
-    return 3;  // E
+    return 2;  // E
   else if (pin_states & mask[LEFT])
-    return 7;  // W
+    return 6;  // W
   else
-    return 0;  // Center
+    return 8;  // Center (null state, outside logical range 0-7)
 }
 
 static inline bool reached(const uint32_t t) {
