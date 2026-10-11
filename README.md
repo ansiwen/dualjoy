@@ -32,7 +32,7 @@ Pico.
 ## Build
 
 If you want to use different GPIOs, you easily can build the firmware yourself.
-Like any other pico project, after installing the 
+Like any other pico project, after installing the
 [Pico SDK](https://github.com/raspberrypi/pico-sdk) you do:
 
 ```
@@ -41,6 +41,8 @@ $ cd build
 $ cmake ..
 $ make
 ```
+
+If building for the Pico 2 (RP2350), use `cmake -DPICO_BOARD=pico2 ..` instead.
 
 ## Simple hardware example
 

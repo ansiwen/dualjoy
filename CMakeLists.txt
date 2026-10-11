@@ -57,7 +57,9 @@ target_include_directories(dualjoy PUBLIC
 target_link_libraries(dualjoy PUBLIC pico_stdlib pico_unique_id tinyusb_device tinyusb_board)
 
 # Uncomment this line to enable fix for Errata RP2040-E5 (the fix requires use of GPIO 15)
-target_compile_definitions(dualjoy PUBLIC PICO_RP2040_USB_DEVICE_ENUMERATION_FIX=1)
+if(PICO_PLATFORM STREQUAL "rp2040")
+    target_compile_definitions(dualjoy PUBLIC PICO_RP2040_USB_DEVICE_ENUMERATION_FIX=1)
+endif()
 
 pico_add_extra_outputs(dualjoy)
 
