@@ -1,2 +1,11 @@
 build
 .vscode
+
+# KiCad local/generated files
+*.kicad_prl
+*-backups/
+fp-info-cache
+*.lck
+_autosave-*
+*.kicad_sch-bak
+.history/

@@ -51,3 +51,10 @@ If building for the Pico 2 (RP2350), use `cmake -DPICO_BOARD=pico2 ..` instead.
   <img src="images/IMG_4930.jpg" alt="Second image" width="49%">
   &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
 </p>
+
+## PCB
+
+A ready-made PCB with a matching top and bottom plate as enclosure is available
+in [hardware/](hardware/README.md).
+
+<img src="hardware/images/photo-assembled-top.jpg" alt="DualJoy PCB" width="49%">
